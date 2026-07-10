@@ -510,7 +510,7 @@ module MongrelDB
             io.write_byte(b)
           else
             io << '%'
-            b.to_s(io, 16, upcase: true)
+            b.to_s(io, 16, precision: 2, upcase: true)
           end
         end
       end

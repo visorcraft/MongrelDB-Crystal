@@ -1,0 +1,38 @@
+# Shard manifest for the MongrelDB Crystal client.
+#
+# A pure Crystal HTTP client for MongrelDB - typed CRUD, a fluent query
+# builder, idempotent batch transactions, SQL, and schema introspection. Built
+# on the standard library (HTTP::Client, JSON) with no external dependencies.
+
+name: mongreldb
+version: 0.1.0
+
+authors:
+  - Visorcraft <noreply@visorcraft.com>
+
+description: |
+  Pure Crystal HTTP client for MongrelDB - typed CRUD, fluent query builder,
+  idempotent batch transactions, SQL, and schema introspection.
+
+license: MIT OR Apache-2.0
+
+# Crystal 1.10 is the supported minimum; the JSON::Builder/Parser behaviour
+# and HTTP::Client options used here are stable from that version onward.
+crystal: ">= 1.10.0"
+
+documentation: https://github.com/visorcraft/MongrelDB-Crystal
+homepage: https://github.com/visorcraft/MongrelDB-Crystal
+repository: https://github.com/visorcraft/MongrelDB-Crystal
+
+targets:
+  basic_crud:
+    main: examples/basic_crud.cr
+  query_builder_example:
+    main: examples/query_builder.cr
+  transactions:
+    main: examples/transactions.cr
+
+scripts:
+  test: crystal spec
+
+license_file: LICENSE-MIT

@@ -105,6 +105,14 @@ puts db.count("orders") # 2
 db.sql("UPDATE orders SET amount = 200.0 WHERE customer = 'Bob'")
 ```
 
+Column hashes also accept `enum_variants` and `default_value`. Pass the
+daemon's native table CHECK block as the third argument:
+
+```crystal
+checks = JSON.parse(%({"checks":[{"id":1,"name":"amount_nonneg","expr":{"Ge":[{"Col":3},{"Lit":{"Float64":0.0}}]}}]})).as_h
+db.create_table("orders", columns, checks)
+```
+
 ## Authentication
 
 ```crystal

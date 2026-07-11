@@ -29,6 +29,7 @@ begin
   # Create the table. Schema: id (int64 PK), role (enum with default), name
   # (varchar), score (float64 with default). Column-level keys (enum_variants,
   # default_value) are forwarded to the daemon verbatim.
+  constraints = JSON.parse(%({"checks":[{"id":1,"name":"score_nonneg","expr":{"Ge":[{"Col":4},{"Lit":{"Float64":0.0}}]}}]})).as_h
   tid = db.create_table(TABLE, [
     {"id" => 1, "name" => "id", "ty" => "int64", "primary_key" => true, "nullable" => false},
     {"id" => 2, "name" => "role", "ty" => "enum",
@@ -39,7 +40,7 @@ begin
     {"id" => 4, "name" => "score", "ty" => "float64",
      "default_value" => 0,
      "primary_key" => false, "nullable" => false},
-  ])
+  ], constraints)
   puts "Created table #{TABLE} (id #{tid})"
 
   # Insert three rows. Cells map column id -> value.

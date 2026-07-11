@@ -538,7 +538,7 @@ module MongrelDB
   # end
   # ```
   class QueryBuilder
-    @conditions = [] of Hash(String, JSON::Any)
+    @conditions : Array(Hash(String, JSON::Any)) = [] of Hash(String, JSON::Any)
     @projection : Array(Int32)?
     @limit : Int32?
     @last_truncated = false
@@ -638,7 +638,7 @@ module MongrelDB
   # A Transaction is single-use -- call `#commit` or `#rollback` once, then
   # create a new one with `Client#begin_transaction`.
   class Transaction
-    @ops = [] of Hash(String, JSON::Any)
+    @ops : Array(Hash(String, JSON::Any)) = [] of Hash(String, JSON::Any)
     @committed = false
 
     # Initialize a new Transaction. Normally created via
@@ -721,7 +721,7 @@ module MongrelDB
 end
 
 # Extend UInt8 with an RFC 3986 unreserved check, used by url_path_escape.
-class UInt8
+struct UInt8
   # True for RFC 3986 unreserved characters: ALPHA / DIGIT / "-" / "." / "_" / "~".
   def unreserved? : Bool
     case self

@@ -89,6 +89,22 @@ describe MongrelDB::QueryBuilder do
 end
 
 describe MongrelDB::Client do
+  it "preserves enum, default, and table CHECK create-table keys" do
+    columns = [
+      {"id" => 1, "name" => "status", "ty" => "enum",
+       "primary_key" => false, "nullable" => false,
+       "enum_variants" => ["draft", "active"],
+       "default_value" => "draft"},
+    ] of MongrelDB::Column
+    constraints = JSON.parse(%({"checks":[{"id":1,"name":"known_status","expr":{"Eq":[{"Col":1},{"Lit":{"Bytes":"draft"}}]}}]})).as_h
+    wire = JSON.parse({"name" => "articles", "columns" => columns,
+                       "constraints" => constraints}.to_json)
+
+    wire["columns"][0]["enum_variants"].as_a.size.should eq(2)
+    wire["columns"][0]["default_value"].as_s.should eq("draft")
+    wire["constraints"]["checks"][0]["name"].as_s.should eq("known_status")
+  end
+
   describe ".flatten_cells" do
     it "flattens a column-id-to-value map into [id, value, ...] pairs" do
       flat = MongrelDB::Client.flatten_cells({1 => "Alice", 3 => 99.5})

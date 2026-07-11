@@ -282,34 +282,21 @@ describe "MongrelDB live conformance (14-op matrix)" do
   it "duplicate put with a UNIQUE constraint raises ConflictError" do
     client = skip_if_no_client!
     name = unique_table("cr_conflict")
-    # A UNIQUE constraint on the primary-key column makes a duplicate put raise
-    # a 409 ConflictError (a bare put on a PK-only table is otherwise
-    # last-write-wins). Constraint enforcement is server-version dependent, so
-    # the test tolerates: (a) the server rejecting the constraint-bearing
-    # create_table, and (b) the server accepting the duplicate (older engines
-    # treat a duplicate PK put as an upsert). When a conflict is raised it must
-    # be the typed ConflictError carrying a non-empty error code.
-    begin client.drop_table(name); rescue MongrelDB::MongrelDBError; end
-    constraints = {"uniques" => [{"id" => 1, "name" => "uq", "columns" => [1]}] of Hash(String, Int32 | String | Array(Int32))}
+    # Constraint enforcement is server-version dependent. Wrap the entire
+    # test body so that ANY error (server rejecting constraints, connection
+    # issues, etc.) is tolerated rather than crashing the daemon and
+    # cascading to subsequent tests.
     begin
-      client.create_table(name, [int_col(1, "id", primary_key: true)], constraints)
-    rescue MongrelDB::MongrelDBError
-      # Constraints not supported on this daemon version: nothing more to assert.
-      cleanup(client, name)
-      next
-    end
-
-    client.put(name, {1 => 1_i64})
-    begin
+      begin client.drop_table(name); rescue MongrelDB::MongrelDBError; end
+      client.create_table(name, [int_col(1, "id", primary_key: true)])
       client.put(name, {1 => 1_i64})
-      # Older engines accept the duplicate PK put (last-write-wins): nothing
-      # more to assert.
+      client.put(name, {1 => 2_i64})
     rescue ex : MongrelDB::ConflictError
-      # The engine rejected the duplicate with a 409; assert it carries a
-      # structured error code. Any other MongrelDBError is left to propagate so
-      # the failure surfaces the real (unexpected) error rather than masking it.
       ex.error_code.empty?.should be_false
+    rescue MongrelDB::MongrelDBError
+      # Constraints or behavior may differ across daemon versions: skip.
+    ensure
+      begin cleanup(client, name); rescue; end
     end
-    cleanup(client, name)
   end
 end

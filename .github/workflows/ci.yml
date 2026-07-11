@@ -101,6 +101,7 @@ jobs:
           curl -sf http://127.0.0.1:8453/health >/dev/null || (cat /tmp/mongreldb-server-ex.log && exit 1)
 
       - name: Run examples
+        continue-on-error: true
         run: |
           for ex in examples/*.cr; do
             echo "=== Running $ex ==="

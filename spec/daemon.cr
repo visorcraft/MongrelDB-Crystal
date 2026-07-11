@@ -9,7 +9,9 @@ require "file_utils"
 # mongreldb-server (or reuses one at MONGRELDB_URL) and exposes the connected
 # `MongrelDB::Client` via `MongrelDBDaemon.client`.
 module MongrelDBDaemon
-  class_property! client : MongrelDB::Client
+  # Nilable accessor so callers (e.g. skip_if_no_client!) can probe for the
+  # daemon without raising when boot could not start one.
+  class_property client : MongrelDB::Client?
   class_property log_path : String?
   @@process : Process?
   @@data_dir : String?
@@ -113,7 +115,7 @@ module MongrelDBTestHelpers
     {
       "id"          => id, "name" => name, "ty" => "int64",
       "primary_key" => primary_key, "nullable" => false,
-    }
+    } of String => MongrelDB::CellValue
   end
 
   # A typed float64 column descriptor.
@@ -121,7 +123,7 @@ module MongrelDBTestHelpers
     {
       "id"          => id, "name" => name, "ty" => "float64",
       "primary_key" => false, "nullable" => false,
-    }
+    } of String => MongrelDB::CellValue
   end
 
   # Drop +name+ if present then create it with the given columns.
@@ -140,10 +142,14 @@ module MongrelDBTestHelpers
     end
   end
 
-  # Skip the test when the suite was unable to boot a daemon.
-  def skip_if_no_client!
-    if MongrelDBDaemon.client.nil?
+  # Skip the test when the suite was unable to boot a daemon. Returns the
+  # connected (non-nil) client so callers can rebind a non-nilable local after
+  # the skip check, e.g. `client = skip_if_no_client!`.
+  def skip_if_no_client! : MongrelDB::Client
+    c = MongrelDBDaemon.client
+    if c.nil?
       pending!("no mongreldb-server available")
     end
+    c
   end
 end

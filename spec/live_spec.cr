@@ -25,22 +25,24 @@ include MongrelDBTestHelpers
 # The full 14-operation conformance matrix. Each test self-skips when no
 # daemon is available via skip_if_no_client!.
 describe "MongrelDB live conformance (14-op matrix)" do
-  client = MongrelDBDaemon.client
+  # Each test fetches a non-nilable client via `client = skip_if_no_client!`,
+  # which skips the test when no daemon was booted. A block-local `client`
+  # (not a describe-level closure) lets the compiler narrow it to non-nil.
 
   it "health returns true against the real daemon" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     client.health.should be_true
   end
 
   it "connect defaults to 127.0.0.1:8453" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     c2 = MongrelDB::Client.new
     c2.base_url.should eq(MongrelDB::DEFAULT_BASE_URL)
     client.auth?.should be_false
   end
 
   it "create_table then count returns 0" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_create")
     fresh_table(client, name, [int_col(1, "id", primary_key: true), float_col(2, "amount")])
     client.count(name).should eq(0)
@@ -48,7 +50,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "put then count round-trips" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_put")
     fresh_table(client, name, [int_col(1, "id", primary_key: true), float_col(2, "amount")])
     client.put(name, {1 => 1, 2 => 99.5})
@@ -58,7 +60,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "upsert inserts then updates" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_upsert")
     fresh_table(client, name, [int_col(1, "id", primary_key: true), float_col(2, "amount")])
     # First upsert inserts.
@@ -71,7 +73,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "delete_by_pk removes the row" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_delpk")
     fresh_table(client, name, [int_col(1, "id", primary_key: true)])
     client.put(name, {1 => 5})
@@ -82,7 +84,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "delete by row id removes the row" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_delrid")
     fresh_table(client, name, [int_col(1, "id", primary_key: true)])
     client.put(name, {1 => 7})
@@ -93,7 +95,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "query by primary key returns one row" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_pk")
     fresh_table(client, name, [int_col(1, "id", primary_key: true)])
     client.put(name, {1 => 42})
@@ -104,7 +106,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "query range with friendly aliases filters correctly" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_range")
     fresh_table(client, name, [int_col(1, "id", primary_key: true), int_col(2, "amount")])
     client.put(name, {1 => 1, 2 => 50})
@@ -118,7 +120,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "query projection and limit" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_proj")
     fresh_table(client, name, [int_col(1, "id", primary_key: true), float_col(2, "amount")])
     5.times { |i| client.put(name, {1 => i, 2 => i.to_f64}) }
@@ -128,7 +130,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "transaction put commit" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_txn")
     fresh_table(client, name, [int_col(1, "id", primary_key: true)])
     txn = client.begin_transaction
@@ -143,7 +145,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "transaction commit with idempotency key does not double-apply" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_txn_idem")
     fresh_table(client, name, [int_col(1, "id", primary_key: true)])
     idem_key = "order-100-create-#{Time.utc.to_unix}"
@@ -161,7 +163,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "transaction rollback discards ops" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_txn_rb")
     fresh_table(client, name, [int_col(1, "id", primary_key: true)])
     txn = client.begin_transaction
@@ -173,7 +175,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "transaction double commit raises" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_txn_double")
     fresh_table(client, name, [int_col(1, "id", primary_key: true)])
     txn = client.begin_transaction
@@ -184,7 +186,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "table_names lists the created table" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_tables")
     fresh_table(client, name, [int_col(1, "id", primary_key: true)])
     names = client.table_names
@@ -193,7 +195,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "drop_table removes it" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_drop")
     fresh_table(client, name, [int_col(1, "id", primary_key: true)])
     client.drop_table(name)
@@ -201,7 +203,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "sql insert increases count and select returns row" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_sql")
     fresh_table(client, name, [int_col(1, "id", primary_key: true), float_col(2, "amount")])
     client.count(name).should eq(0)
@@ -217,7 +219,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "schema includes the created table" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_schema")
     fresh_table(client, name, [int_col(1, "id", primary_key: true), float_col(2, "amount")])
     schema = client.schema
@@ -226,7 +228,7 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "schema_for returns a descriptor with columns" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_schema_for")
     fresh_table(client, name, [int_col(1, "id", primary_key: true), float_col(2, "amount")])
     desc = client.schema_for(name)
@@ -237,13 +239,13 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "compact all tables returns a hash" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     result = client.compact
     result.should be_a(Hash(String, JSON::Any))
   end
 
   it "compact single table returns a hash" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_compact")
     fresh_table(client, name, [int_col(1, "id", primary_key: true)])
     client.put(name, {1 => 1})
@@ -253,13 +255,13 @@ describe "MongrelDB live conformance (14-op matrix)" do
   end
 
   it "schema_for on a nonexistent table raises NotFoundError" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_missing")
     expect_raises(MongrelDB::NotFoundError) { client.schema_for(name) }
   end
 
   it "duplicate put with a UNIQUE constraint raises ConflictError" do
-    skip_if_no_client!
+    client = skip_if_no_client!
     name = unique_table("cr_conflict")
     # A bare put on a PK-only table is last-write-wins; a UNIQUE constraint is
     # required for the engine to reject a duplicate with a 409.

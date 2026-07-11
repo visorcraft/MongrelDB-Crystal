@@ -190,7 +190,10 @@ module MongrelDB
     #   Flattened to the server's `[col_id, value, ...]` array before sending.
     # - `idempotency_key` - when non-empty, makes the commit safe to retry.
     def put(table : String, cells : Cells, idempotency_key : String? = nil) : Hash(String, JSON::Any)
-      results = commit_one([{"put" => {"table" => table, "cells" => flatten_cells(cells)}}], idempotency_key)
+      inner = {} of String => JSON::Any
+      inner["table"] = JSON::Any.new(table)
+      inner["cells"] = JSON::Any.new(Client.flatten_cells(cells))
+      results = commit_one([{"put" => JSON::Any.new(inner)}], idempotency_key)
       results.first? || {} of String => JSON::Any
     end
 
@@ -201,23 +204,31 @@ module MongrelDB
     # - `idempotency_key` - idempotency key for safe retries.
     def upsert(table : String, cells : Cells, update_cells : Cells? = nil,
                idempotency_key : String? = nil) : Hash(String, JSON::Any)
-      op = {"table" => table, "cells" => flatten_cells(cells)} of String => JSON::Any | Array(JSON::Any)
-      unless update_cells.nil?
-        op["update_cells"] = flatten_cells(update_cells)
+      inner = {} of String => JSON::Any
+      inner["table"] = JSON::Any.new(table)
+      inner["cells"] = JSON::Any.new(Client.flatten_cells(cells))
+      if uc = update_cells
+        inner["update_cells"] = JSON::Any.new(Client.flatten_cells(uc))
       end
-      results = commit_one([{"upsert" => op}], idempotency_key)
+      results = commit_one([{"upsert" => JSON::Any.new(inner)}], idempotency_key)
       results.first? || {} of String => JSON::Any
     end
 
     # Delete a row by its internal row id.
     def delete(table : String, row_id : Int64) : Nil
-      commit_one([{"delete" => {"table" => table, "row_id" => row_id}}], nil)
+      inner = {} of String => JSON::Any
+      inner["table"] = JSON::Any.new(table)
+      inner["row_id"] = JSON::Any.new(row_id)
+      commit_one([{"delete" => JSON::Any.new(inner)}], nil)
       nil
     end
 
     # Delete a row by its primary-key value.
     def delete_by_pk(table : String, pk : CellValue) : Nil
-      commit_one([{"delete_by_pk" => {"table" => table, "pk" => pk}}], nil)
+      inner = {} of String => JSON::Any
+      inner["table"] = JSON::Any.new(table)
+      inner["pk"] = Client.to_any(pk)
+      commit_one([{"delete_by_pk" => JSON::Any.new(inner)}], nil)
       nil
     end
 
@@ -282,7 +293,8 @@ module MongrelDB
     def commit_txn(ops : Array, idempotency_key : String? = nil) : Array(Hash(String, JSON::Any))
       return [] of Hash(String, JSON::Any) if ops.empty?
 
-      payload = {"ops" => ops} of String => JSON::Any | Array
+      payload = {} of String => JSON::Any
+      payload["ops"] = JSON::Any.new(ops.map { |op| JSON::Any.new(op) })
       unless idempotency_key.nil? || idempotency_key.empty?
         payload["idempotency_key"] = JSON::Any.new(idempotency_key)
       end
@@ -332,7 +344,13 @@ module MongrelDB
     end
 
     # Coerce a Crystal value into a `JSON::Any` for the request payload.
-    def self.to_any(value : CellValue) : JSON::Any
+    #
+    # Accepts the native Crystal scalars and containers callers pass in (from
+    # `Cells`/`Column` values as well as ad-hoc query-parameter literals).
+    # Generic `Array` and `Hash` literals (e.g. `["a", "b"]` typed as
+    # `Array(String)`) are coerced element-wise so callers do not have to widen
+    # them to `Array(CellValue)` themselves.
+    def self.to_any(value) : JSON::Any
       case value
       when Int64                     then JSON::Any.new(value)
       when Int32                     then JSON::Any.new(value.to_i64)
@@ -341,8 +359,8 @@ module MongrelDB
       when Bool                      then JSON::Any.new(value)
       when String                    then JSON::Any.new(value)
       when Nil                       then JSON::Any.new(nil)
-      when Array                     then JSON::Any.new(value.map { |v| to_any(v.as(CellValue)) })
-      when Hash(String, _)           then JSON::Any.new(value.transform_values { |v| to_any(v.as(CellValue)) })
+      when Array                     then JSON::Any.new(value.map { |v| to_any(v) })
+      when Hash                      then JSON::Any.new(value.transform_values { |v| to_any(v) })
       else                                JSON::Any.new(value.to_s)
       end
     end
@@ -559,7 +577,9 @@ module MongrelDB
     # `column_id`, `min`/`max` -> `lo`/`hi`) are accepted; the server's
     # canonical keys are also accepted as-is.
     def where(type : String, params : Hash) : QueryBuilder
-      @conditions << {type => QueryBuilder.normalize_condition(type, params)}
+      entry = {} of String => JSON::Any
+      entry[type] = JSON::Any.new(QueryBuilder.normalize_condition(type, params))
+      @conditions << entry
       self
     end
 
@@ -580,7 +600,7 @@ module MongrelDB
       payload = {} of String => JSON::Any
       payload["table"] = JSON::Any.new(@table)
       unless @conditions.empty?
-        payload["conditions"] = JSON::Any.new(@conditions)
+        payload["conditions"] = JSON::Any.new(@conditions.map { |cond| JSON::Any.new(cond) })
       end
       if proj = @projection
         payload["projection"] = JSON::Any.new(proj.map { |i| JSON::Any.new(i.to_i64) })
@@ -632,7 +652,7 @@ module MongrelDB
       normalized = {} of String => JSON::Any
       params.each do |key, value|
         canon = aliases[key.to_s]? || key.to_s
-        normalized[canon] = Client.to_any(value.as(CellValue))
+        normalized[canon] = Client.to_any(value)
       end
       normalized
     end
@@ -658,7 +678,7 @@ module MongrelDB
     def put(table : String, cells : Cells, returning : Bool = false) : Transaction
       op = {
         "table"    => JSON::Any.new(table),
-        "cells"    => Client.flatten_cells(cells),
+        "cells"    => JSON::Any.new(Client.flatten_cells(cells)),
         "returning" => JSON::Any.new(returning),
       } of String => JSON::Any
       @ops << {"put" => JSON::Any.new(op)}
@@ -670,11 +690,11 @@ module MongrelDB
                returning : Bool = false) : Transaction
       op = {
         "table"    => JSON::Any.new(table),
-        "cells"    => Client.flatten_cells(cells),
+        "cells"    => JSON::Any.new(Client.flatten_cells(cells)),
         "returning" => JSON::Any.new(returning),
       } of String => JSON::Any
       if uc = update_cells
-        op["update_cells"] = Client.flatten_cells(uc)
+        op["update_cells"] = JSON::Any.new(Client.flatten_cells(uc))
       end
       @ops << {"upsert" => JSON::Any.new(op)}
       self

@@ -63,9 +63,9 @@ describe MongrelDB::QueryBuilder do
       payload["table"].raw.should eq("orders")
       conds = payload["conditions"].raw.as(Array)
       conds.size.should eq(1)
-      rng = conds.first.as(Hash)
-      rng["range"].as(Hash)["column_id"].raw.should eq(3)
-      rng["range"].as(Hash)["lo"].raw.should eq(100)
+      rng = conds.first.raw.as(Hash)
+      rng["range"].raw.as(Hash)["column_id"].raw.should eq(3)
+      rng["range"].raw.as(Hash)["lo"].raw.should eq(100)
       payload["projection"].raw.should eq([1, 2])
       payload["limit"].raw.should eq(10)
     end
@@ -90,12 +90,15 @@ end
 
 describe MongrelDB::Client do
   it "preserves enum, default, and table CHECK create-table keys" do
-    columns = [
-      {"id" => 1, "name" => "status", "ty" => "enum",
-       "primary_key" => false, "nullable" => false,
-       "enum_variants" => ["draft", "active"],
-       "default_value" => "draft"},
-    ] of MongrelDB::Column
+    column = {} of String => MongrelDB::CellValue
+    column["id"] = 1
+    column["name"] = "status"
+    column["ty"] = "enum"
+    column["primary_key"] = false
+    column["nullable"] = false
+    column["enum_variants"] = ["draft", "active"] of MongrelDB::CellValue
+    column["default_value"] = "draft"
+    columns = [column] of MongrelDB::Column
     constraints = JSON.parse(%({"checks":[{"id":1,"name":"known_status","expr":{"Eq":[{"Col":1},{"Lit":{"Bytes":"draft"}}]}}]})).as_h
     wire = JSON.parse({"name" => "articles", "columns" => columns,
                        "constraints" => constraints}.to_json)
@@ -203,9 +206,11 @@ end
 
 describe "exception hierarchy" do
   it "inherits from MongrelDBError" do
-    MongrelDB::AuthError.superclass.should eq(MongrelDB::MongrelDBError)
-    MongrelDB::NotFoundError.superclass.should eq(MongrelDB::MongrelDBError)
-    MongrelDB::ConflictError.superclass.should eq(MongrelDB::MongrelDBError)
-    MongrelDB::QueryError.superclass.should eq(MongrelDB::MongrelDBError)
+    # Crystal classes respond to `<=` (subclass-or-same check), the analogue
+    # of Ruby's `Class#superclass`/`<` for asserting a type descends from another.
+    (MongrelDB::AuthError <= MongrelDB::MongrelDBError).should be_true
+    (MongrelDB::NotFoundError <= MongrelDB::MongrelDBError).should be_true
+    (MongrelDB::ConflictError <= MongrelDB::MongrelDBError).should be_true
+    (MongrelDB::QueryError <= MongrelDB::MongrelDBError).should be_true
   end
 end

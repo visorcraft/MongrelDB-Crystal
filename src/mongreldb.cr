@@ -6,6 +6,14 @@
 # query builder that pushes conditions down to the engine's native indexes,
 # idempotent batch transactions, full SQL access, schema introspection, and
 # maintenance operations.
+
+# Standard-library prelude. These modules define the types the client relies on
+# (JSON::Any, JSON.parse, HTTP::Client, Base64, URI, OpenSSL, ...). The Crystal
+# prelude does not auto-require them, so load them explicitly before the file
+# references them.
+require "json"
+require "http/client"
+require "base64"
 #
 # Connect with a base URL and optional credentials:
 #

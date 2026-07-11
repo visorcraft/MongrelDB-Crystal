@@ -105,7 +105,8 @@ puts db.count("orders") # 2
 db.sql("UPDATE orders SET amount = 200.0 WHERE customer = 'Bob'")
 ```
 
-Column hashes also accept `enum_variants` and `default_value`. Pass the
+Column hashes also accept `enum_variants`, scalar `default_value`, and dynamic
+`default_expr` (`"now"` or `"uuid"`). Pass the
 daemon's native table CHECK block as the third argument:
 
 ```crystal

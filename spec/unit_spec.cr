@@ -97,14 +97,16 @@ describe MongrelDB::Client do
     column["primary_key"] = false
     column["nullable"] = false
     column["enum_variants"] = ["draft", "active"] of MongrelDB::CellValue
-    column["default_value"] = "draft"
+    column["default_value"] = 3
+    column["default_expr"] = "uuid"
     columns = [column] of MongrelDB::Column
     constraints = JSON.parse(%({"checks":[{"id":1,"name":"known_status","expr":{"Eq":[{"Col":1},{"Lit":{"Bytes":"draft"}}]}}]})).as_h
     wire = JSON.parse({"name" => "articles", "columns" => columns,
                        "constraints" => constraints}.to_json)
 
     wire["columns"][0]["enum_variants"].as_a.size.should eq(2)
-    wire["columns"][0]["default_value"].as_s.should eq("draft")
+    wire["columns"][0]["default_value"].as_i.should eq(3)
+    wire["columns"][0]["default_expr"].as_s.should eq("uuid")
     wire["constraints"]["checks"][0]["name"].as_s.should eq("known_status")
   end
 

@@ -293,4 +293,38 @@ describe "MongrelDB live conformance (14-op matrix)" do
       begin cleanup(client, name); rescue; end
     end
   end
+
+  it "history retention getters and AS OF EPOCH time travel" do
+    client = skip_if_no_client!
+    name = unique_table("cr_retention")
+    fresh_table(client, name, [
+      int_col(1, "id", primary_key: true),
+      varchar_col(2, "value"),
+    ])
+
+    begin
+      # Set a narrow window first so `earliest_retained_epoch` tracks the
+      # visible watermark; after the insert it equals the insert epoch - 1.
+      resp = client.set_history_retention_epochs(1)
+      resp["history_retention_epochs"].raw.should eq(1)
+      resp.has_key?("earliest_retained_epoch").should be_true
+
+      insert_cells = {1 => 1_i64, 2 => "first"} of Int32 => MongrelDB::CellValue
+      update_cells = {2 => "second"} of Int32 => MongrelDB::CellValue
+      client.put(name, insert_cells)
+
+      insert_epoch = client.earliest_retained_epoch + 1
+      insert_epoch.should be > 1
+
+      # Expand the window before updating so the insert epoch stays retained.
+      client.set_history_retention_epochs(100)
+      client.upsert(name, insert_cells, update_cells: update_cells)
+
+      historical = client.sql("SELECT value FROM #{name} AS OF EPOCH #{insert_epoch}")
+      historical.size.should eq(1)
+      historical.first["value"].as_s.should eq("first")
+    ensure
+      begin cleanup(client, name); rescue; end
+    end
+  end
 end

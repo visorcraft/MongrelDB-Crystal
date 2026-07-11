@@ -1,5 +1,30 @@
 require "./spec_helper"
 require "../src/mongreldb"
+require "http/server"
+
+# Boot a tiny in-process HTTP server that records every request and returns
+# queued JSON responses. Used by the offline retention transport test to assert
+# the exact method, path, and body the client sends.
+def with_retention_mock(responses : Array(String), &block)
+  requests = [] of {method: String, path: String, body: String?}
+
+  server = HTTP::Server.new do |context|
+    body = context.request.body.try(&.gets_to_end)
+    requests << {method: context.request.method, path: context.request.path, body: body}
+    context.response.content_type = "application/json"
+    context.response.print responses[requests.size - 1]
+  end
+
+  address = server.bind_tcp("127.0.0.1", 0)
+  spawn { server.listen }
+  sleep 0.02.seconds
+
+  begin
+    yield address.port, requests
+  ensure
+    server.close
+  end
+end
 
 # Offline unit tests for the MongrelDB Crystal client. No daemon needed.
 #
@@ -60,6 +85,28 @@ describe MongrelDB::QueryBuilder do
                 "default_value" => value} of String => MongrelDB::CellValue
       JSON.parse(column.to_json)["default_value"].raw.should eq(value)
     end
+  end
+
+  it "encodes a create-table payload with every supported default form" do
+    columns = [
+      {"id" => 1, "name" => "s",       "ty" => "varchar",   "default_value" => "text"} of String => MongrelDB::CellValue,
+      {"id" => 2, "name" => "n",       "ty" => "int64",     "default_value" => 3} of String => MongrelDB::CellValue,
+      {"id" => 3, "name" => "b",       "ty" => "bool",      "default_value" => true} of String => MongrelDB::CellValue,
+      {"id" => 4, "name" => "nil_col", "ty" => "varchar",   "default_value" => nil} of String => MongrelDB::CellValue,
+      {"id" => 5, "name" => "now_lit", "ty" => "timestamp", "default_value" => "now"} of String => MongrelDB::CellValue,
+      {"id" => 6, "name" => "now_expr","ty" => "timestamp", "default_expr"  => "now"} of String => MongrelDB::CellValue,
+    ] of MongrelDB::Column
+
+    wire = JSON.parse({"name" => "defaults", "columns" => columns}.to_json)
+    cols = wire["columns"].as_a
+    cols.size.should eq(6)
+
+    cols[0]["default_value"].as_s.should eq("text")
+    cols[1]["default_value"].as_i.should eq(3)
+    cols[2]["default_value"].as_bool.should be_true
+    cols[3]["default_value"].raw.should be_nil
+    cols[4]["default_value"].as_s.should eq("now")
+    cols[5]["default_expr"].as_s.should eq("now")
   end
 
   describe "#build" do
@@ -197,6 +244,42 @@ describe MongrelDB::Client do
       MongrelDB::Client.new(token: "t").auth?.should be_true
       MongrelDB::Client.new(username: "u", password: "p").auth?.should be_true
       MongrelDB::Client.new.auth?.should be_false
+    end
+
+    describe "history retention" do
+      it "sends the frozen /history/retention contract" do
+        responses = [
+          %({"history_retention_epochs":7,"earliest_retained_epoch":3}),
+          %({"history_retention_epochs":42,"earliest_retained_epoch":1}),
+          %({"history_retention_epochs":42,"earliest_retained_epoch":1}),
+        ]
+
+        with_retention_mock(responses) do |port, requests|
+          c = MongrelDB::Client.new(url: "http://127.0.0.1:#{port}")
+
+          c.history_retention_epochs.should eq(7)
+
+          resp = c.set_history_retention_epochs(42)
+          resp["history_retention_epochs"].raw.should eq(42)
+          resp["earliest_retained_epoch"].raw.should eq(1)
+
+          c.earliest_retained_epoch.should eq(1)
+
+          requests.size.should eq(3)
+
+          requests[0][:method].should eq("GET")
+          requests[0][:path].should eq("/history/retention")
+
+          requests[1][:method].should eq("PUT")
+          requests[1][:path].should eq("/history/retention")
+          body = JSON.parse(requests[1][:body].to_s)
+          body.as_h.has_key?("history_retention_epochs").should be_true
+          body["history_retention_epochs"].raw.should eq(42)
+
+          requests[2][:method].should eq("GET")
+          requests[2][:path].should eq("/history/retention")
+        end
+      end
     end
   end
 end

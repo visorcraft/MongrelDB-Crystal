@@ -126,6 +126,14 @@ module MongrelDBTestHelpers
     } of String => MongrelDB::CellValue
   end
 
+  # A typed varchar column descriptor.
+  def varchar_col(id : Int32, name : String) : MongrelDB::Column
+    {
+      "id"          => id, "name" => name, "ty" => "varchar",
+      "primary_key" => false, "nullable" => false,
+    } of String => MongrelDB::CellValue
+  end
+
   # Drop +name+ if present then create it with the given columns.
   def fresh_table(client : MongrelDB::Client, name : String, columns : Array(MongrelDB::Column)) : Nil
     begin

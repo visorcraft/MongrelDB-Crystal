@@ -153,12 +153,32 @@ module MongrelDB
       data.try(&.as_a?) || [] of JSON::Any
     end
 
+    # Inspect the durable MVCC history window. Returns both
+    # `history_retention_epochs` and `earliest_retained_epoch`.
     def history_retention : Hash(String, JSON::Any)
-      get("/history/retention").json.as_h
+      data = get("/history/retention").json
+      (data.try(&.as_h?) || {} of String => JSON::Any)
     end
 
+    # Current number of commit epochs the daemon will retain for time travel.
+    def history_retention_epochs : Int64
+      n = history_retention["history_retention_epochs"]?.try(&.as_i64?)
+      raise QueryError.new("malformed history retention response from server") unless n
+      n
+    end
+
+    # The oldest epoch still available for `AS OF EPOCH` queries.
+    def earliest_retained_epoch : Int64
+      n = history_retention["earliest_retained_epoch"]?.try(&.as_i64?)
+      raise QueryError.new("malformed history retention response from server") unless n
+      n
+    end
+
+    # Set the durable MVCC history window. Requires ADMIN permission when the
+    # daemon runs with catalog authentication. Returns the post-update window.
     def set_history_retention_epochs(epochs : Int) : Hash(String, JSON::Any)
-      put("/history/retention", {"history_retention_epochs" => epochs}).json.as_h
+      data = put("/history/retention", {"history_retention_epochs" => epochs}).json
+      (data.try(&.as_h?) || {} of String => JSON::Any)
     end
 
     # Create a table with typed columns. Returns the assigned table id.

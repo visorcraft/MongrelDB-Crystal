@@ -23,7 +23,7 @@
 |---|---|---|
 | Crystal client | `mongreldb` | `shards` dependency |
 
-History retention: `history_retention` and `set_history_retention_epochs(n)`.
+History retention: `history_retention_epochs`, `earliest_retained_epoch`, and `set_history_retention_epochs(n)`.
 
 ## Requirements
 
@@ -108,8 +108,23 @@ db.sql("UPDATE orders SET amount = 200.0 WHERE customer = 'Bob'")
 ```
 
 Column hashes also accept `enum_variants`, scalar `default_value`, and dynamic
-`default_expr` (`"now"` or `"uuid"`). Pass the
-daemon's native table CHECK block as the third argument:
+`default_expr` (`"now"` or `"uuid"`). A single create-table payload can mix
+string, number, boolean, explicit null, literal `"now"`, and `default_expr`
+values:
+
+```crystal
+db.create_table("events", [
+  {"id" => 1, "name" => "id",     "ty" => "int64",     "primary_key" => true,  "nullable" => false},
+  {"id" => 2, "name" => "msg",   "ty" => "varchar",   "default_value" => "untitled"},
+  {"id" => 3, "name" => "score", "ty" => "int64",     "default_value" => 0},
+  {"id" => 4, "name" => "live",  "ty" => "bool",      "default_value" => true},
+  {"id" => 5, "name" => "extra", "ty" => "varchar",   "default_value" => nil},
+  {"id" => 6, "name" => "ts",    "ty" => "timestamp", "default_value" => "now"},  # literal now
+  {"id" => 7, "name" => "ts2",   "ty" => "timestamp", "default_expr"  => "now"},  # dynamic now
+])
+```
+
+Pass the daemon's native table CHECK block as the third argument:
 
 ```crystal
 checks = JSON.parse(%({"checks":[{"id":1,"name":"amount_nonneg","expr":{"Ge":[{"Col":3},{"Lit":{"Float64":0.0}}]}}]})).as_h
@@ -202,6 +217,27 @@ db.sql("WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM r WHERE n<10)
 db.sql("SELECT id, ROW_NUMBER() OVER (PARTITION BY customer ORDER BY amount DESC) FROM orders")
 ```
 
+## History retention and time travel
+
+Administrators can inspect and adjust the durable MVCC history window at
+runtime through the `/history/retention` endpoints:
+
+```crystal
+# Keep the last 100 commit epochs available for time-travel queries.
+db.set_history_retention_epochs(100)
+
+puts db.history_retention_epochs   # => 100
+puts db.earliest_retained_epoch    # => oldest epoch still readable
+
+# Read a previous version of a row with SQL AS OF EPOCH.
+rows = db.sql("SELECT amount FROM orders AS OF EPOCH 42 WHERE id = 1")
+```
+
+Both endpoints require `ADMIN` permission when the daemon runs with catalog
+authentication (`--auth-token` or `--auth-users`). Connect with an admin token
+or user to use them. Expanding the window cannot restore history that was
+already pruned; it only changes how far forward future pruning happens.
+
 ## User & role management
 
 User, role, and permission management is performed through SQL against the
@@ -261,6 +297,9 @@ end
 | `sql(sql)` -> `Array(JSON::Any)` | Execute SQL |
 | `schema` -> `Hash(String, JSON::Any)` | Full schema catalog |
 | `schema_for(table)` -> `Hash(String, JSON::Any)` | Single-table descriptor |
+| `history_retention_epochs` -> `Int64` | Current retained epoch count |
+| `earliest_retained_epoch` -> `Int64` | Oldest epoch still available |
+| `set_history_retention_epochs(epochs)` -> `Hash` | Set the MVCC history window |
 | `compact` / `compact_table(name)` -> `Hash` | Compaction |
 | `begin_transaction` -> `Transaction` | Start a batch |
 | `get(path)`, `post(path, body)`, `http_delete(path)` -> `Response` | Low-level HTTP (for endpoints not yet wrapped) |

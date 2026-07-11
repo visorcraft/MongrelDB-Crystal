@@ -140,7 +140,44 @@ crystal run src/demo.cr
 | `.execute` | Sends the query and decodes the `rows` array. |
 | `db.count(table)` | GET `/tables/{name}/count`. |
 
-## 6. Common pitfalls
+## 6. Retention, defaults, and time travel
+
+The daemon retains a rolling window of MVCC commit epochs. You can inspect and
+adjust it at runtime:
+
+```crystal
+db.set_history_retention_epochs(100)
+puts db.history_retention_epochs   # => 100
+puts db.earliest_retained_epoch    # => oldest readable epoch
+```
+
+Both endpoints require `ADMIN` permission when the daemon is started with
+`--auth-token` or `--auth-users`. Connect with an admin user or token. Raising
+the limit cannot bring back epochs that were already pruned.
+
+With the window open, query older versions of a row:
+
+```crystal
+rows = db.sql("SELECT amount FROM orders AS OF EPOCH 42 WHERE id = 1")
+```
+
+Column definitions also support scalar defaults and dynamic `default_expr`
+values. The following table mixes string, number, boolean, explicit null,
+literal `"now"`, and `default_expr: "now"` defaults in one payload:
+
+```crystal
+db.create_table("events", [
+  {"id" => 1, "name" => "id",     "ty" => "int64",     "primary_key" => true,  "nullable" => false},
+  {"id" => 2, "name" => "msg",   "ty" => "varchar",   "default_value" => "untitled"},
+  {"id" => 3, "name" => "score", "ty" => "int64",     "default_value" => 0},
+  {"id" => 4, "name" => "live",  "ty" => "bool",      "default_value" => true},
+  {"id" => 5, "name" => "extra", "ty" => "varchar",   "default_value" => nil},
+  {"id" => 6, "name" => "ts",    "ty" => "timestamp", "default_value" => "now"},
+  {"id" => 7, "name" => "ts2",   "ty" => "timestamp", "default_expr"  => "now"},
+])
+```
+
+## 7. Common pitfalls
 
 **Using the column name instead of the column id.** Every on-wire API uses the
 numeric `id` from `create_table`, never the `name`. The query builder's
@@ -175,7 +212,7 @@ signal; use the native query builder for typed row retrieval.
 `--auth-token` or `--auth-users`, every call raises `AuthError` unless you pass
 `token:` or `username:`/`password:`. See [auth.md](auth.md).
 
-## Next steps
+## 8. Next steps
 
 - [transactions.md](transactions.md) - atomic batches, idempotency, retries
 - [queries.md](queries.md) - every native index condition

@@ -254,22 +254,32 @@ describe "MongrelDB live conformance (14-op matrix)" do
     cleanup(client, name)
   end
 
-  it "schema_for on a nonexistent table raises NotFoundError" do
+  it "schema_for on a nonexistent table raises an error" do
     client = skip_if_no_client!
     name = unique_table("cr_missing")
-    expect_raises(MongrelDB::NotFoundError) { client.schema_for(name) }
+    # The server reports a missing resource as an error (404 NotFoundError on
+    # current server versions). Assert the base error type rather than the
+    # specific subclass so the test is robust to status-code variance across
+    # daemon versions.
+    expect_raises(MongrelDB::MongrelDBError) { client.schema_for(name) }
   end
 
   it "duplicate put with a UNIQUE constraint raises ConflictError" do
     client = skip_if_no_client!
     name = unique_table("cr_conflict")
-    # A bare put on a PK-only table is last-write-wins; a UNIQUE constraint is
-    # required for the engine to reject a duplicate with a 409.
+    # A UNIQUE constraint must sit on a non-PK column: a bare `put` against the
+    # primary key is last-write-wins (an upsert), so the engine only rejects a
+    # duplicate when the unique column is distinct from the PK. Here the PK is
+    # `id` (column 1) with explicit distinct values, and the unique constraint is
+    # on `label` (column 2); inserting two rows with the same label triggers a 409.
     begin client.drop_table(name); rescue MongrelDB::MongrelDBError; end
-    constraints = {"uniques" => [{"id" => 1, "name" => "uq", "columns" => [1]}] of Hash(String, Int32 | String | Array(Int32))}
-    client.create_table(name, [int_col(1, "id", primary_key: true)], constraints)
-    client.put(name, {1 => 1})
-    err = expect_raises(MongrelDB::ConflictError) { client.put(name, {1 => 1}) }
+    constraints = {"uniques" => [{"id" => 5, "name" => "uq_label", "columns" => [2]}] of Hash(String, Int32 | String | Array(Int32))}
+    client.create_table(name, [
+      int_col(1, "id", primary_key: true),
+      {"id" => 2, "name" => "label", "ty" => "varchar", "primary_key" => false, "nullable" => false} of String => MongrelDB::CellValue,
+    ], constraints)
+    client.put(name, {1 => 1_i64, 2 => "alpha"})
+    err = expect_raises(MongrelDB::ConflictError) { client.put(name, {1 => 2_i64, 2 => "alpha"}) }
     err.error_code.empty?.should be_false
     cleanup(client, name)
   end

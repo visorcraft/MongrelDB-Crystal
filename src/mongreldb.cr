@@ -153,6 +153,14 @@ module MongrelDB
       data.try(&.as_a?) || [] of JSON::Any
     end
 
+    def history_retention : Hash(String, JSON::Any)
+      get("/history/retention").json.as_h
+    end
+
+    def set_history_retention_epochs(epochs : Int) : Hash(String, JSON::Any)
+      put("/history/retention", {"history_retention_epochs" => epochs}).json.as_h
+    end
+
     # Create a table with typed columns. Returns the assigned table id.
     def create_table(name : String, columns : Array(Column)) : Int64
       body = {"name" => name, "columns" => columns}
@@ -317,6 +325,10 @@ module MongrelDB
     # and return the `Response`. A `nil` body sends an empty request.
     def post(path : String, body = nil) : Response
       request("POST", path, body)
+    end
+
+    def put(path : String, body) : Response
+      request("PUT", path, body)
     end
 
     # Perform a DELETE request and return the `Response`.

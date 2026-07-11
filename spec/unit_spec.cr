@@ -52,6 +52,16 @@ describe MongrelDB::QueryBuilder do
     end
   end
 
+
+  it "preserves every static default JSON scalar including literal now" do
+    values = ["text", 3, true, nil, "now"] of MongrelDB::CellValue
+    values.each do |value|
+      column = {"id" => 1, "name" => "value", "ty" => "varchar",
+                "default_value" => value} of String => MongrelDB::CellValue
+      JSON.parse(column.to_json)["default_value"].raw.should eq(value)
+    end
+  end
+
   describe "#build" do
     it "includes conditions, projection, and limit when set" do
       c = MongrelDB::Client.new(url: "http://127.0.0.1:1")

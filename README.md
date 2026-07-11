@@ -23,6 +23,8 @@
 |---|---|---|
 | Crystal client | `mongreldb` | `shards` dependency |
 
+History retention: `history_retention` and `set_history_retention_epochs(n)`.
+
 ## Requirements
 
 - **Crystal 1.10 or newer**

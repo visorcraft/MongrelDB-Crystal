@@ -420,6 +420,7 @@ module MongrelDB
         case method
         when "GET"    then client.get(uri.request_target, headers)
         when "POST"   then client.post(uri.request_target, headers: headers, body: request_body)
+        when "PUT"    then client.put(uri.request_target, headers: headers, body: request_body)
         when "DELETE" then client.delete(uri.request_target, headers)
         else               raise QueryError.new("unsupported HTTP method: #{method}")
         end

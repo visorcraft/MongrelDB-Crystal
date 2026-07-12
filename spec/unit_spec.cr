@@ -4,13 +4,15 @@ require "http/server"
 
 # Boot a tiny in-process HTTP server that records every request and returns
 # queued JSON responses. Used by the offline retention transport test to assert
-# the exact method, path, and body the client sends.
-def with_retention_mock(responses : Array(String), &block)
+# the exact method, path, and body the client sends. The optional `status`
+# (default 200) lets error-propagation tests simulate non-2xx responses.
+def with_retention_mock(responses : Array(String), status : Int32 = 200, &block)
   requests = [] of {method: String, path: String, body: String?}
 
   server = HTTP::Server.new do |context|
     body = context.request.body.try(&.gets_to_end)
     requests << {method: context.request.method, path: context.request.path, body: body}
+    context.response.status_code = status
     context.response.content_type = "application/json"
     context.response.print responses[requests.size - 1]
   end
@@ -107,6 +109,7 @@ describe MongrelDB::QueryBuilder do
     cols[3]["default_value"].raw.should be_nil
     cols[4]["default_value"].as_s.should eq("now")
     cols[5]["default_expr"].as_s.should eq("now")
+    cols[5].has_key?("default_value").should be_false
   end
 
   describe "#build" do
@@ -272,12 +275,30 @@ describe MongrelDB::Client do
 
           requests[1][:method].should eq("PUT")
           requests[1][:path].should eq("/history/retention")
-          body = JSON.parse(requests[1][:body].to_s)
-          body.as_h.has_key?("history_retention_epochs").should be_true
-          body["history_retention_epochs"].raw.should eq(42)
+          requests[1][:body].should eq(%({"history_retention_epochs":42}))
 
           requests[2][:method].should eq("GET")
           requests[2][:path].should eq("/history/retention")
+        end
+      end
+
+      it "raises QueryError on a non-2xx response" do
+        responses = [%({"error":{"message":"server overloaded","code":"UNAVAILABLE"}})]
+        with_retention_mock(responses, status: 503) do |port, requests|
+          c = MongrelDB::Client.new(url: "http://127.0.0.1:#{port}")
+
+          expect_raises(MongrelDB::QueryError) do
+            c.history_retention_epochs
+          end
+
+          expect_raises(MongrelDB::QueryError) do
+            c.set_history_retention_epochs(42)
+          end
+
+          requests.size.should eq(2)
+          requests.each do |req|
+            req[:path].should eq("/history/retention")
+          end
         end
       end
     end

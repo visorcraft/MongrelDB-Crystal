@@ -109,7 +109,7 @@ describe MongrelDB::QueryBuilder do
     cols[3]["default_value"].raw.should be_nil
     cols[4]["default_value"].as_s.should eq("now")
     cols[5]["default_expr"].as_s.should eq("now")
-    cols[5].has_key?("default_value").should be_false
+    cols[5].as_h.has_key?("default_value").should be_false
   end
 
   describe "#build" do

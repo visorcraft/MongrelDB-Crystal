@@ -600,6 +600,7 @@ module MongrelDB
     @conditions : Array(Hash(String, JSON::Any)) = [] of Hash(String, JSON::Any)
     @projection : Array(Int32)?
     @limit : Int32?
+    @offset : Int64?
     @last_truncated = false
 
     # Initialize a new QueryBuilder. Normally created via `Client#query`.
@@ -628,6 +629,12 @@ module MongrelDB
       self
     end
 
+    # Skip matching rows before applying the limit.
+    def offset(offset : Int64?) : QueryBuilder
+      @offset = offset
+      self
+    end
+
     # Build the request payload that will be sent to `/kit/query`.
     def build : Hash(String, JSON::Any)
       payload = {} of String => JSON::Any
@@ -640,6 +647,9 @@ module MongrelDB
       end
       if lim = @limit
         payload["limit"] = JSON::Any.new(lim.to_i64)
+      end
+      if off = @offset
+        payload["offset"] = JSON::Any.new(off)
       end
       payload
     end

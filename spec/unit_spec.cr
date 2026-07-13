@@ -119,6 +119,7 @@ describe MongrelDB::QueryBuilder do
            .where("range", {"column" => 3, "min" => 100})
            .projection([1, 2])
            .limit(10)
+           .offset(12)
       payload = q.build
       payload["table"].raw.should eq("orders")
       conds = payload["conditions"].raw.as(Array)
@@ -128,6 +129,7 @@ describe MongrelDB::QueryBuilder do
       rng["range"].raw.as(Hash)["lo"].raw.should eq(100)
       payload["projection"].raw.should eq([1, 2])
       payload["limit"].raw.should eq(10)
+      payload["offset"].raw.should eq(12)
     end
 
     it "omits unset fields" do
@@ -137,6 +139,7 @@ describe MongrelDB::QueryBuilder do
       payload.has_key?("conditions").should be_false
       payload.has_key?("projection").should be_false
       payload.has_key?("limit").should be_false
+      payload.has_key?("offset").should be_false
     end
   end
 

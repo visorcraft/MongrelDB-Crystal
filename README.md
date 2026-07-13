@@ -311,6 +311,7 @@ end
 | `where(type, params)` -> `self` | Add a native condition (AND-ed) |
 | `projection(column_ids)` -> `self` | Set column projection |
 | `limit(limit)` -> `self` | Set row limit |
+| `offset(offset)` -> `self` | Skip matching rows before the limit |
 | `build` -> `Hash` | Build the request payload |
 | `execute` -> `Array(JSON::Any)` | Run the query |
 | `truncated?` -> `Bool` | Whether the last `execute` result hit the limit |

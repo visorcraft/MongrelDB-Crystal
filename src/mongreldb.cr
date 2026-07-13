@@ -24,7 +24,7 @@ require "base64"
 #
 # See https://www.MongrelDB.com for the daemon and full documentation.
 module MongrelDB
-  VERSION = "0.1.0"
+  VERSION = "0.52.2"
 
   # Default daemon address used when none is supplied.
   DEFAULT_BASE_URL = "http://127.0.0.1:8453"

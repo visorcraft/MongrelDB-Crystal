@@ -267,6 +267,11 @@ module MongrelDB
       QueryBuilder.new(self, table)
     end
 
+    # Start a hybrid `SearchBuilder` against `table` (POST /kit/search).
+    def search(table : String) : SearchBuilder
+      SearchBuilder.new(self, table)
+    end
+
     # ── SQL ────────────────────────────────────────────────────────────────
 
     # Execute a SQL statement via the `/sql` endpoint, requesting JSON output.
@@ -698,6 +703,142 @@ module MongrelDB
         normalized[canon] = Client.to_any(value)
       end
       normalized
+    end
+  end
+
+  # Builds a request for POST /kit/search — multi-retriever hybrid search.
+  class SearchBuilder
+    @must = [] of Hash(String, JSON::Any)
+    @retrievers = [] of Hash(String, JSON::Any)
+    @fusion = {} of String => JSON::Any
+    @rerank : Hash(String, JSON::Any)?
+    @limit : Int32 = 10
+    @projection : Array(Int32)?
+    @explain = false
+    @cursor : String?
+
+    def initialize(@client : Client, @table : String)
+      rr = {} of String => JSON::Any
+      rr["constant"] = JSON::Any.new(60_i64)
+      @fusion = {"reciprocal_rank" => JSON::Any.new(rr)}
+    end
+
+    def must(type : String, params : Hash = {} of String => JSON::Any) : SearchBuilder
+      entry = {} of String => JSON::Any
+      entry[type] = JSON::Any.new(QueryBuilder.normalize_condition(type, params))
+      @must << entry
+      self
+    end
+
+    def ann_retriever(name : String, column_id : Int32, query : Array(Float64), k : Int32 = 64, weight : Float64 = 1.0) : SearchBuilder
+      ann = {} of String => JSON::Any
+      ann["column_id"] = JSON::Any.new(column_id.to_i64)
+      ann["query"] = JSON::Any.new(query.map { |f| JSON::Any.new(f) })
+      ann["k"] = JSON::Any.new(k.to_i64)
+      r = {} of String => JSON::Any
+      r["name"] = JSON::Any.new(name)
+      r["weight"] = JSON::Any.new(weight)
+      r["ann"] = JSON::Any.new(ann)
+      @retrievers << r
+      self
+    end
+
+    def sparse_retriever(name : String, column_id : Int32, terms : Array(Array(Number)), k : Int32 = 64, weight : Float64 = 1.0) : SearchBuilder
+      pairs = terms.map do |t|
+        JSON::Any.new([JSON::Any.new(t[0].to_i64), JSON::Any.new(t[1].to_f64)])
+      end
+      sparse = {} of String => JSON::Any
+      sparse["column_id"] = JSON::Any.new(column_id.to_i64)
+      sparse["query"] = JSON::Any.new(pairs)
+      sparse["k"] = JSON::Any.new(k.to_i64)
+      r = {} of String => JSON::Any
+      r["name"] = JSON::Any.new(name)
+      r["weight"] = JSON::Any.new(weight)
+      r["sparse"] = JSON::Any.new(sparse)
+      @retrievers << r
+      self
+    end
+
+    def min_hash_retriever(name : String, column_id : Int32, members : Array(String), k : Int32 = 64, weight : Float64 = 1.0) : SearchBuilder
+      mh = {} of String => JSON::Any
+      mh["column_id"] = JSON::Any.new(column_id.to_i64)
+      mh["members"] = JSON::Any.new(members.map { |m| JSON::Any.new(m) })
+      mh["k"] = JSON::Any.new(k.to_i64)
+      r = {} of String => JSON::Any
+      r["name"] = JSON::Any.new(name)
+      r["weight"] = JSON::Any.new(weight)
+      r["min_hash"] = JSON::Any.new(mh)
+      @retrievers << r
+      self
+    end
+
+    def fusion(constant : Int32 = 60) : SearchBuilder
+      rr = {} of String => JSON::Any
+      rr["constant"] = JSON::Any.new([constant, 1].max.to_i64)
+      @fusion = {"reciprocal_rank" => JSON::Any.new(rr)}
+      self
+    end
+
+    def exact_rerank(embedding_column : Int32, query : Array(Float64), metric : String = "cosine", candidate_limit : Int32 = 64, weight : Float64 = 1.0) : SearchBuilder
+      ev = {} of String => JSON::Any
+      ev["embedding_column"] = JSON::Any.new(embedding_column.to_i64)
+      ev["query"] = JSON::Any.new(query.map { |f| JSON::Any.new(f) })
+      ev["metric"] = JSON::Any.new(metric)
+      ev["candidate_limit"] = JSON::Any.new(candidate_limit.to_i64)
+      ev["weight"] = JSON::Any.new(weight)
+      @rerank = {"exact_vector" => JSON::Any.new(ev)}
+      self
+    end
+
+    def limit(limit : Int32) : SearchBuilder
+      @limit = limit
+      self
+    end
+
+    def projection(column_ids : Array(Int32)?) : SearchBuilder
+      @projection = column_ids
+      self
+    end
+
+    def explain(on : Bool = true) : SearchBuilder
+      @explain = on
+      self
+    end
+
+    def cursor(cursor : String?) : SearchBuilder
+      @cursor = cursor
+      self
+    end
+
+    def build : Hash(String, JSON::Any)
+      raise ArgumentError.new("search requires at least one retriever") if @retrievers.empty?
+      raise ArgumentError.new("search limit must be positive") if @limit <= 0
+
+      payload = {} of String => JSON::Any
+      payload["table"] = JSON::Any.new(@table)
+      payload["retrievers"] = JSON::Any.new(@retrievers.map { |r| JSON::Any.new(r) })
+      payload["fusion"] = JSON::Any.new(@fusion)
+      payload["limit"] = JSON::Any.new(@limit.to_i64)
+      unless @must.empty?
+        payload["must"] = JSON::Any.new(@must.map { |m| JSON::Any.new(m) })
+      end
+      if rr = @rerank
+        payload["rerank"] = JSON::Any.new(rr)
+      end
+      if proj = @projection
+        payload["projection"] = JSON::Any.new(proj.map { |i| JSON::Any.new(i.to_i64) })
+      end
+      payload["explain"] = JSON::Any.new(true) if @explain
+      if c = @cursor
+        payload["cursor"] = JSON::Any.new(c) unless c.empty?
+      end
+      payload
+    end
+
+    def execute : Hash(String, JSON::Any)
+      data = @client.post("/kit/search", build).json
+      h = data.is_a?(JSON::Any) ? data.as_h? : nil
+      h || {} of String => JSON::Any
     end
   end
 

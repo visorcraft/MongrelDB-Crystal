@@ -53,7 +53,7 @@ jobs:
     name: Live integration (against mongreldb-server)
     runs-on: ubuntu-latest
     env:
-      SERVER_VERSION: '0.55.0'
+      SERVER_VERSION: '0.59.1'
       # The test harness boots the daemon itself from ./bin/mongreldb-server.
       # MONGRELDB_SERVER points it at the downloaded binary.
       MONGRELDB_SERVER: ./bin/mongreldb-server

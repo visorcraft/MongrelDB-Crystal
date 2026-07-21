@@ -8,6 +8,9 @@ module MongrelDB
   # optional constraints (`enum_variants`, `default_value`, ...).
   alias Column = Hash(String, CellValue)
 
+  # A secondary-index descriptor accepted by `Client#create_table`.
+  alias Index = Hash(String, CellValue)
+
   # A cell value: any JSON-encodable scalar the server accepts for a column.
   alias CellValue = Int64 | Int32 | Float64 | Float32 | Bool | String | Nil | Array(CellValue) | Hash(String, CellValue)
 

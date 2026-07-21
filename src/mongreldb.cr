@@ -195,6 +195,15 @@ module MongrelDB
       (data.try(&.["table_id"]?).try(&.as_i64?) || 0_i64)
     end
 
+    # Create a table with constraints and full secondary-index definitions.
+    def create_table(name : String, columns : Array(Column), constraints : Hash,
+                     indexes : Array(Index)) : Int64
+      body = {"name" => name, "columns" => columns,
+              "constraints" => constraints, "indexes" => indexes}
+      data = post("/kit/create_table", body).json
+      (data.try(&.["table_id"]?).try(&.as_i64?) || 0_i64)
+    end
+
     # Drop a table by name.
     def drop_table(name : String) : Nil
       http_delete("/tables/#{url_path_escape(name)}")

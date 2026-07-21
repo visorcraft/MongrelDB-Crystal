@@ -286,7 +286,7 @@ end
 | `Client.new(url:, token:, username:, password:, connect_timeout:, read_timeout:)` | Construct a client (`url` defaults to `http://127.0.0.1:8453`) |
 | `health` -> `Bool` | Check daemon health |
 | `table_names` -> `Array(JSON::Any)` | List table names |
-| `create_table(name, columns)` / `create_table(name, columns, constraints)` -> `Int64` | Create a table; returns the table id |
+| `create_table(name, columns, constraints, indexes)` -> `Int64` | Create a table with optional constraints and all index definitions |
 | `drop_table(name)` -> `Nil` | Drop a table |
 | `count(table)` -> `Int64` | Row count |
 | `put(table, cells, idempotency_key:)` -> `Hash` | Insert a row |

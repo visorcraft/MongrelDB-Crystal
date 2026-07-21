@@ -222,11 +222,11 @@ db.sql("SELECT id, ROW_NUMBER() OVER (PARTITION BY customer ORDER BY amount DESC
 The engine's `ann` index is swappable across three backends - `hnsw` (the default), `diskann`, and `ivf` - selected with the `algorithm` option. Quantization is independently configurable: `dense`, `binary_sign`, or `product` (product quantization, with `num_subvectors`, `bits_per_subvector`, `pq_training_samples`, `pq_seed`, and `pq_rerank_factor`). These are ordinary DDL strings run through `sql`, so no client changes are needed.
 
 ```crystal
-# DiskANN (on-disk graph, terabyte-scale)
+# DiskANN (in-memory Vamana graph)
 db.sql("CREATE INDEX orders_emb_diskann ON orders USING ann (embedding) WITH (algorithm = 'diskann', quantization = 'dense', diskann_l = 50, diskann_r = 64, beam_width = 8)")
 
-# IVF with product quantization (clustered, memory-frugal)
-db.sql("CREATE INDEX orders_emb_ivf ON orders USING ann (embedding) WITH (algorithm = 'ivf', quantization = 'product', nlist = 1024, nprobe = 16, num_subvectors = 16, bits_per_subvector = 8)")
+# IVF with dense vectors (clustered)
+db.sql("CREATE INDEX orders_emb_ivf ON orders USING ann (embedding) WITH (algorithm = 'ivf', quantization = 'dense', nlist = 1024, nprobe = 16)")
 
 # HNSW with product quantization (recall-tuned)
 db.sql("CREATE INDEX orders_emb_hnsw_pq ON orders USING ann (embedding) WITH (algorithm = 'hnsw', quantization = 'product', m = 16, ef_construction = 200, ef_search = 50, num_subvectors = 32, pq_training_samples = 50000, pq_rerank_factor = 8)")
@@ -377,7 +377,7 @@ on `PATH`:
 ```sh
 mkdir -p bin
 curl -fsSL -o bin/mongreldb-server \
-  https://github.com/visorcraft/MongrelDB/releases/download/v0.62.0/mongreldb-server-linux-x64
+  https://github.com/visorcraft/MongrelDB/releases/download/v0.63.0/mongreldb-server-linux-x64
 chmod +x bin/mongreldb-server
 ```
 

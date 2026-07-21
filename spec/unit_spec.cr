@@ -305,6 +305,25 @@ describe MongrelDB::Client do
         end
       end
     end
+
+    it "preserves ANN backend options in create_table" do
+      with_retention_mock([%({"table_id":1})]) do |port, requests|
+        c = MongrelDB::Client.new(url: "http://127.0.0.1:#{port}")
+        diskann = {"r" => 64_i32, "l" => 128_i32, "beam_width" => 8_i32,
+                   "alpha" => 120_i32} of String => MongrelDB::CellValue
+        ann = {"algorithm" => "diskann", "quantization" => "dense",
+               "diskann" => diskann} of String => MongrelDB::CellValue
+        options = {"ann" => ann} of String => MongrelDB::CellValue
+        index = {"name" => "ann", "column_id" => 2_i32, "kind" => "ann",
+                 "options" => options} of String => MongrelDB::CellValue
+        c.create_table("vectors", [] of MongrelDB::Column,
+          {} of String => MongrelDB::CellValue, [index]).should eq(1)
+        body = requests[0][:body].not_nil!
+        body.should contain(%("algorithm":"diskann"))
+        body.should contain(%("quantization":"dense"))
+        body.should contain(%("beam_width":8))
+      end
+    end
   end
 end
 

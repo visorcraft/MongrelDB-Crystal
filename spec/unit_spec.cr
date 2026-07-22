@@ -352,3 +352,69 @@ describe "exception hierarchy" do
     (MongrelDB::QueryError <= MongrelDB::MongrelDBError).should be_true
   end
 end
+
+describe MongrelDB::QueryStatus do
+  it "parses structural durable HLC without string parsing" do
+    fixture = JSON.parse(%({
+      "query_id": "abcdefabcdefabcdefabcdefabcdefab",
+      "status": "committed",
+      "state": "completed",
+      "server_state": "completed",
+      "terminal_state": "committed",
+      "committed": true,
+      "last_commit_epoch": 17,
+      "last_commit_hlc": {
+        "physical_micros": 1700000000000000,
+        "logical": 3,
+        "node_tiebreaker": 7
+      },
+      "outcome": {
+        "committed": true,
+        "last_commit_epoch": 17,
+        "last_commit_hlc": {
+          "physical_micros": 1700000000000000,
+          "logical": 3,
+          "node_tiebreaker": 7
+        },
+        "serialization": "succeeded",
+        "serialization_state": "succeeded",
+        "terminal_state": "committed"
+      },
+      "durable": {
+        "committed": true,
+        "last_commit_epoch": 17,
+        "last_commit_hlc": {
+          "physical_micros": 1700000000000000,
+          "logical": 3,
+          "node_tiebreaker": 7
+        },
+        "serialization": "succeeded",
+        "serialization_state": "succeeded",
+        "terminal_state": "committed"
+      }
+    }))
+    status = MongrelDB::QueryStatus.from_json_any(fixture)
+    status.committed.should eq(true)
+    hlc = status.commit_hlc
+    hlc.should_not be_nil
+    hlc.not_nil!.physical_micros.should eq(1_700_000_000_000_000)
+    hlc.not_nil!.logical.should eq(3)
+    hlc.not_nil!.node_tiebreaker.should eq(7)
+    status.serialization_state.should eq("succeeded")
+    status.outcome.last_commit_epoch.should eq(17)
+  end
+end
+
+describe MongrelDB::SearchBuilder do
+  it "builds multi-retriever search with two retrievers" do
+    db = MongrelDB::Client.new("http://127.0.0.1:9")
+    payload = db.search("docs")
+      .ann_retriever("ann", 3, [0.1, 0.2], 10, 1.0)
+      .sparse_retriever("sparse", 4, [[1, 0.5], [2, 0.25]], 10, 0.5)
+      .fusion(60)
+      .limit(5)
+      .build
+    retrievers = payload["retrievers"].as_a
+    retrievers.size.should eq(2)
+  end
+end

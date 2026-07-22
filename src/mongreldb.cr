@@ -24,7 +24,7 @@ require "base64"
 #
 # See https://www.MongrelDB.com for the daemon and full documentation.
 module MongrelDB
-  VERSION = "0.63.1"
+  VERSION = "0.64.0"
 
   # Default daemon address used when none is supplied.
   DEFAULT_BASE_URL = "http://127.0.0.1:8453"
@@ -70,6 +70,121 @@ module MongrelDB
   # not covered by the more specific errors (including network/encoding
   # problems).
   class QueryError < MongrelDBError
+  end
+
+  # Structural HLC from durable recovery (0.64+).
+  struct CommitHlc
+    getter physical_micros : Int64
+    getter logical : Int32
+    getter node_tiebreaker : Int32
+
+    def initialize(@physical_micros : Int64, @logical : Int32 = 0, @node_tiebreaker : Int32 = 0)
+    end
+
+    def self.from_json_any(raw : JSON::Any?) : CommitHlc?
+      return nil if raw.nil?
+      h = raw.as_h?
+      return nil if h.nil?
+      phys = h["physical_micros"]?
+      return nil if phys.nil?
+      logical = h["logical"]?.try(&.as_i?) || 0
+      node = h["node_tiebreaker"]?.try(&.as_i?) || 0
+      CommitHlc.new(phys.as_i64, logical.to_i32, node.to_i32)
+    rescue
+      nil
+    end
+  end
+
+  # Nested durable recovery payload.
+  struct DurableOutcome
+    getter committed : Bool?
+    getter last_commit_epoch : Int64?
+    getter last_commit_hlc : CommitHlc?
+    getter serialization : String
+    getter serialization_state : String?
+    getter terminal_state : String?
+
+    def initialize(
+      @committed : Bool? = nil,
+      @last_commit_epoch : Int64? = nil,
+      @last_commit_hlc : CommitHlc? = nil,
+      @serialization : String = "",
+      @serialization_state : String? = nil,
+      @terminal_state : String? = nil
+    )
+    end
+
+    def self.from_json_any(raw : JSON::Any?) : DurableOutcome
+      h = raw.try(&.as_h?) || {} of String => JSON::Any
+      committed = h["committed"]?.try(&.as_bool?)
+      epoch = h["last_commit_epoch"]?.try(&.as_i64?)
+      ser = h["serialization"]?.try(&.as_s?) || ""
+      ser_state = h["serialization_state"]?.try(&.as_s?)
+      term = h["terminal_state"]?.try(&.as_s?)
+      DurableOutcome.new(
+        committed,
+        epoch,
+        CommitHlc.from_json_any(h["last_commit_hlc"]?),
+        ser,
+        ser_state,
+        term
+      )
+    end
+  end
+
+  # GET /queries/{query_id} decoded status for durable recovery.
+  class QueryStatus
+    getter query_id : String
+    getter status : String
+    getter state : String
+    getter server_state : String
+    getter terminal_state : String?
+    getter committed : Bool?
+    getter last_commit_epoch : Int64?
+    getter last_commit_hlc : CommitHlc?
+    getter outcome : DurableOutcome
+    getter durable : DurableOutcome?
+    getter raw : Hash(String, JSON::Any)
+
+    def initialize(raw : Hash(String, JSON::Any))
+      @raw = raw
+      @query_id = raw["query_id"]?.try(&.as_s?) || ""
+      @status = raw["status"]?.try(&.as_s?) || ""
+      @state = raw["state"]?.try(&.as_s?) || ""
+      @server_state = raw["server_state"]?.try(&.as_s?) || @state
+      @terminal_state = raw["terminal_state"]?.try(&.as_s?)
+      @committed = raw["committed"]?.try(&.as_bool?)
+      @last_commit_epoch = raw["last_commit_epoch"]?.try(&.as_i64?)
+      @last_commit_hlc = CommitHlc.from_json_any(raw["last_commit_hlc"]?)
+      @outcome = DurableOutcome.from_json_any(raw["outcome"]?)
+      durable_raw = raw["durable"]?
+      @durable = durable_raw.try { |d| DurableOutcome.from_json_any(d) }
+    end
+
+    def self.from_json_any(raw : JSON::Any) : QueryStatus
+      h = raw.as_h? || {} of String => JSON::Any
+      new(h)
+    end
+
+    # Authoritative HLC: durable → outcome → top-level.
+    def commit_hlc : CommitHlc?
+      if d = @durable
+        return d.last_commit_hlc if d.last_commit_hlc
+      end
+      return @outcome.last_commit_hlc if @outcome.last_commit_hlc
+      @last_commit_hlc
+    end
+
+    def serialization_state : String
+      if d = @durable
+        return d.serialization_state.not_nil! if d.serialization_state && !d.serialization_state.not_nil!.empty?
+        return d.serialization if !d.serialization.empty?
+      end
+      if @outcome.serialization_state && !@outcome.serialization_state.not_nil!.empty?
+        return @outcome.serialization_state.not_nil!
+      end
+      @outcome.serialization
+    end
   end
 
   # Response wraps one HTTP response from the daemon. It exposes the raw
@@ -279,6 +394,40 @@ module MongrelDB
     # Start a hybrid `SearchBuilder` against `table` (POST /kit/search).
     def search(table : String) : SearchBuilder
       SearchBuilder.new(self, table)
+    end
+
+    # Text → embed → ANN retrieve (POST /kit/retrieve_text, 0.64+).
+    def retrieve_text(table : String, embedding_column : Int32, text : String,
+                      k : Int32? = nil, deadline_ms : Int64? = nil, max_work : Int64? = nil) : Hash(String, JSON::Any)
+      raise QueryError.new("table is required") if table.empty?
+      raise QueryError.new("text is required") if text.empty?
+      payload = {} of String => JSON::Any
+      payload["table"] = JSON::Any.new(table)
+      payload["embedding_column"] = JSON::Any.new(embedding_column.to_i64)
+      payload["text"] = JSON::Any.new(text)
+      payload["k"] = JSON::Any.new(k.to_i64) if k
+      payload["deadline_ms"] = JSON::Any.new(deadline_ms.not_nil!) if deadline_ms
+      payload["max_work"] = JSON::Any.new(max_work.not_nil!) if max_work
+      data = post("/kit/retrieve_text", payload).json
+      h = data.try(&.as_h?) || {} of String => JSON::Any
+      h["hits"] = JSON::Any.new([] of JSON::Any) unless h.has_key?("hits")
+      h["provenance"] = JSON::Any.new({} of String => JSON::Any) unless h.has_key?("provenance")
+      h
+    end
+
+    # Retained SQL status for durable recovery (GET /queries/{query_id}).
+    def query_status(query_id : String) : QueryStatus
+      raise QueryError.new("query_id is required") if query_id.empty?
+      data = get("/queries/#{url_path_escape(query_id)}").json
+      raise QueryError.new("query status response was not a JSON object") unless data
+      QueryStatus.from_json_any(data)
+    end
+
+    # Request cancellation of a running SQL query.
+    def cancel_query(query_id : String) : Hash(String, JSON::Any)
+      raise QueryError.new("query_id is required") if query_id.empty?
+      data = post("/queries/#{url_path_escape(query_id)}/cancel", {} of String => JSON::Any).json
+      data.try(&.as_h?) || {} of String => JSON::Any
     end
 
     # ── SQL ────────────────────────────────────────────────────────────────
